@@ -1,7 +1,10 @@
 const std = @import("std");
-const globals = @import("globals.zig");
-const Vec2 = @import("vec.zig").Vec2;
-const w4 = @import("wasm4.zig");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const globals = root.globals;
+
+const Vec2 = root.Vec2;
 
 pub const width = 21;
 pub const height = 21;

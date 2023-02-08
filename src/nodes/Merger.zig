@@ -1,15 +1,21 @@
-const Vec2 = @import("../vec.zig").Vec2;
-const Direction = @import("../direction.zig").Direction;
-const BoundingBox = @import("../bounding_box.zig").BoundingBox;
-const Item = @import("../item.zig").Item;
-const box = @import("../box.zig");
-const utils = @import("../utils.zig");
-const w4 = @import("../wasm4.zig");
-const shared = @import("shared.zig");
 const std = @import("std");
-const globals = @import("../globals.zig");
-const Writer = @import("../Writer.zig");
-const Reader = @import("../Reader.zig");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const box = root.box;
+const globals = root.globals;
+const shared = @import("shared.zig");
+const utils = root.utils;
+
+const Direction = root.Direction;
+const Item = root.Item;
+const Reader = root.Reader;
+const Rect = root.Rect;
+const Vec2 = root.Vec2;
+const Writer = root.Writer;
+const Network = root.Network;
+
+const NodeId = root.Network.NodeId;
 
 pos: Vec2(i8),
 direction: Direction,
@@ -18,12 +24,12 @@ blocked: [2]bool = [2]bool{ false, false },
 
 const Self = @This();
 
-pub fn advance(self: *Self, id: u8) void {
+pub fn advance(self: *Self, network: *Network, id: NodeId, advance_queue: *Network.AdvanceQueue) void {
     if (!self.slots[0].eql(Item.empty)) self.blocked[0] = true;
     if (!self.slots[1].eql(Item.empty)) self.blocked[1] = true;
-    for (globals.connections.toSlice()) |connection| {
+    for (network.connections) |connection| {
         if (connection.to != id) continue;
-        const node = &globals.nodes.items[connection.from];
+        const node = &network.nodes[connection.from];
         const drop_off_point = node.dropOffPoint(connection.output_index);
         if (!drop_off_point.isWithin(self.boundingBox())) continue;
 
@@ -41,17 +47,18 @@ pub fn advance(self: *Self, id: u8) void {
             }
         }
 
-        node.advance(connection.from);
+        advance_queue.append(connection.from);
     }
 }
 
 fn getInputIndex(self: Self, drop_off_point: Vec2(i32)) usize {
+    // TODO: check if this may lead to an overflow of the i8
     return std.math.absCast(
         if (self.direction.isHorizontal()) self.pos.y - drop_off_point.y else self.pos.x - drop_off_point.x,
     );
 }
 
-pub fn outputItem(self: Self) Item {
+pub fn outputItem(self: *const Self) Item {
     if (self.slots[0].eql(Item.empty)) return Item.empty;
     if (self.slots[1].eql(Item.empty)) return Item.empty;
     return Item.merge(self.slots[0], self.slots[1]);
@@ -64,38 +71,38 @@ pub fn takeItem(self: *Self) void {
     self.blocked[1] = false;
 }
 
-pub fn renderBelts(self: Self, is_wireframe: bool) void {
+pub fn renderBelts(self: *const Self, is_wireframe: bool) void {
     shared.renderBelt(self.pos.as(i32), self.direction, false, is_wireframe);
     shared.renderBelt(self.otherPos(), self.direction, false, is_wireframe);
 }
 
-pub fn renderItems(self: Self) void {
+pub fn renderItems(self: *const Self) void {
     shared.renderItem(self.slots[0], self.pos.as(i32), self.direction.opposite(), self.blocked[0]);
     shared.renderItem(self.slots[1], self.otherPos(), self.direction.opposite(), self.blocked[1]);
 }
 
-pub fn renderStructure(self: Self, is_wireframe: bool) void {
+pub fn renderStructure(self: *const Self, is_wireframe: bool) void {
     var pos = self.pos.as(i32);
     if (self.direction.rotateClockwise().isFacingNegative()) pos = pos.add(self.direction.rotateClockwise().toVec());
     renderOnScreen(utils.worldToScreen(pos), self.direction, is_wireframe, globals.t);
 }
 
 pub fn renderOnScreen(screen_pos: Vec2(i32), direction: Direction, is_wireframe: bool, t: u32) void {
-    const top_pos = screen_pos.addY(-3);
+    const top_pos = screen_pos.add(.{ .y = -3 });
     w4.draw_colors.* = if (is_wireframe) 0x41 else 0x31;
     if (direction.isHorizontal()) {
-        box.renderFront(screen_pos.addY(13));
+        box.renderFront(screen_pos.add(.{ .y = 13 }));
         box.renderTopTall(top_pos);
     } else {
         box.renderTopWide(top_pos);
         if (direction == .south) {
-            box.renderFrontLeft(screen_pos.addY(5));
+            box.renderFrontLeft(screen_pos.add(.{ .y = 5 }));
         } else {
             w4.draw_colors.* = if (is_wireframe) 0x40 else 0x30;
-            box.renderFront(screen_pos.addY(5));
+            box.renderFront(screen_pos.add(.{ .y = 5 }));
         }
         w4.draw_colors.* = if (is_wireframe) 0x40 else 0x30;
-        box.renderFront(screen_pos.addX(8).addY(5));
+        box.renderFront(screen_pos.add(.{ .x = 8, .y = 5 }));
     }
     w4.draw_colors.* = if (is_wireframe) 0x40 else 0x20;
     const blade_tile = if (direction.rotateClockwise().isFacingNegative()) top_pos.add(direction.rotateCounterClockwise().toVec().scale(8)) else top_pos;
@@ -135,12 +142,22 @@ const other_texture = [8]u8{
     0b00000000,
 };
 
-pub fn dropOffPoint(self: Self) Vec2(i32) {
+pub fn renderInputsAndOutputs(self: *const Self, network: *const Network) void {
+    utils.renderInput(network, self.inputPosition(0), self.direction, self.direction == .south);
+    utils.renderInput(network, self.inputPosition(1), self.direction, self.direction == .south);
+    utils.renderOutput(network, self.dropOffPoint(), self.direction, self.direction == .north);
+}
+
+fn inputPosition(self: Self, index: u8) Vec2(i32) {
+    return self.pos.as(i32).add(self.direction.rotateClockwise().toVec().scale(index).subtract(self.direction.toVec()));
+}
+
+pub fn dropOffPoint(self: *const Self) Vec2(i32) {
     return self.pos.as(i32).add(self.direction.toVec());
 }
 
-pub fn boundingBox(self: Self) BoundingBox(i32) {
-    return BoundingBox(i32).fromPoints(
+pub fn boundingBox(self: *const Self) Rect(i32) {
+    return Rect(i32).fromPoints(
         self.pos.as(i32),
         self.otherPos(),
     );
@@ -150,20 +167,28 @@ fn otherPos(self: Self) Vec2(i32) {
     return self.pos.as(i32).add(self.direction.rotateClockwise().toVec());
 }
 
-pub fn canConnect(self: Self, position: Vec2(i32), direction: Direction) bool {
+pub fn canConnect(self: *const Self, position: Vec2(i32), direction: Direction) bool {
     return (std.meta.eql(position, self.pos.as(i32)) or return std.meta.eql(position, self.otherPos())) and direction == self.direction;
 }
 
-pub fn serialize(self: Self, writer: *Writer) void {
-    writer.writeByte(@bitCast(u8, self.pos.x));
-    writer.writeByte(@bitCast(u8, self.pos.y));
+pub fn rotate(self: *Self) Direction {
+    self.pos = self.pos.add(self.direction.rotateClockwise().toVec().intCast(i8));
+    self.direction = self.direction.opposite();
+    self.slots = std.mem.zeroes([2]Item);
+
+    return self.direction;
+}
+
+pub fn serialize(self: *const Self, writer: *Writer) void {
+    writer.write(self.pos.x);
+    writer.write(self.pos.y);
 }
 
 pub fn deserialize(direction: Direction, reader: *Reader) Self {
     return .{
         .pos = .{
-            .x = @bitCast(i8, reader.readByte()),
-            .y = @bitCast(i8, reader.readByte()),
+            .x = reader.read(i8),
+            .y = reader.read(i8),
         },
         .direction = direction,
     };

@@ -1,15 +1,22 @@
-const BoundingBox = @import("../bounding_box.zig").BoundingBox;
-const Direction = @import("../direction.zig").Direction;
-const Item = @import("../item.zig").Item;
-const Slots = @import("../slots.zig").Slots;
-const SlotState = @import("../slots.zig").SlotState;
-const Vec2 = @import("../vec.zig").Vec2;
-const w4 = @import("../wasm4.zig");
-const globals = @import("../globals.zig");
-const shared = @import("shared.zig");
 const std = @import("std");
-const Writer = @import("../Writer.zig");
-const Reader = @import("../Reader.zig");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const globals = root.globals;
+const utils = root.utils;
+
+const shared = @import("shared.zig");
+
+const Direction = root.Direction;
+const Item = root.Item;
+const NodeId = root.NodeId;
+const Reader = root.Reader;
+const Rect = root.Rect;
+const Slots = root.Slots;
+const SlotState = Slots.SlotState;
+const Vec2 = root.Vec2;
+const Writer = root.Writer;
+const Network = root.Network;
 
 pos: Vec2(i8),
 direction: Direction,
@@ -19,15 +26,16 @@ slots: Slots = Slots{},
 slots_blocked: u8 = 0,
 
 const Self = @This();
+pub const max_length = 64;
 
-pub fn boundingBox(self: Self) BoundingBox(i32) {
-    return BoundingBox(i32).fromPoints(
+pub fn boundingBox(self: *const Self) Rect(i32) {
+    return Rect(i32).fromPoints(
         self.pos.as(i32),
         self.pos.as(i32).add(self.direction.toVec().scale(@as(i32, self.len))),
     );
 }
 
-pub fn renderItems(self: Self) void {
+pub fn renderItems(self: *const Self) void {
     var i: u8 = 0;
     while (i <= self.len) : (i += 1) {
         const direction_coming_from = switch (self.slots.get(i)) {
@@ -42,7 +50,7 @@ pub fn renderItems(self: Self) void {
     }
 }
 
-pub fn advance(self: *Self, id: u8) void {
+pub fn advance(self: *Self, network: *Network, id: NodeId, advance_queue: *Network.AdvanceQueue) void {
     self.updateBlockedCount();
     if (self.slots_blocked <= self.len) {
         var j: u8 = self.len - self.slots_blocked;
@@ -61,14 +69,14 @@ pub fn advance(self: *Self, id: u8) void {
             else => .filled,
         });
     }
-    for (globals.connections.toSlice()) |_, connection_index| {
-        const connection = globals.connections.items[if (globals.alternating_sides_flag) globals.connections.len - 1 - connection_index else connection_index];
+    for (network.connections) |_, connection_index| {
+        const connection = network.connections[if (network.alternating_sides_flag) network.connections.len - 1 - connection_index else connection_index];
         if (connection.to != id) continue;
-        const node = &globals.nodes.items[connection.from];
+        const node = &network.nodes[connection.from];
         const drop_off_point = node.dropOffPoint(connection.output_index);
         if (!drop_off_point.isWithin(self.boundingBox())) continue;
 
-        const dest_index = @intCast(u8, self.pos.as(i32).subtract(drop_off_point).magnitude()); // TODO: full magnitude with sqrt not necessary
+        const dest_index = getDestIndex(self.pos.as(i32), drop_off_point);
         if (self.slots.get(dest_index) == .empty) {
             const output_item = node.outputItem(connection.output_index);
             if (!output_item.eql(Item.empty)) {
@@ -80,11 +88,21 @@ pub fn advance(self: *Self, id: u8) void {
                 }
             }
         }
-        node.advance(connection.from);
+        advance_queue.append(connection.from);
     }
 }
 
-pub fn outputItem(self: Self) Item {
+fn getDestIndex(pos: Vec2(i32), drop_off_point: Vec2(i32)) u8 {
+    const delta = pos.subtract(drop_off_point);
+    std.debug.assert(delta.x == 0 or delta.y == 0);
+    return @intCast(u8, std.math.absInt(delta.x + delta.y) catch unreachable);
+}
+
+test "getDestIndex" {
+    try std.testing.expectEqual(getDestIndex(.{ .x = -57, .y = 100 }, .{ .x = 10, .y = 100 }), 67);
+}
+
+pub fn outputItem(self: *const Self) Item {
     return switch (self.slots.get(self.len)) {
         .empty => Item.empty,
         else => self.item,
@@ -97,7 +115,7 @@ pub fn takeItem(self: *Self) void {
     if (!self.hasItems()) self.item = Item.empty;
 }
 
-pub fn hasItems(self: Self) bool {
+fn hasItems(self: *const Self) bool {
     var slot_index: u8 = 0;
     while (slot_index <= self.len) : (slot_index += 1) {
         if (self.slots.get(slot_index) != .empty) return true;
@@ -112,11 +130,11 @@ pub fn updateBlockedCount(self: *Self) void {
     } else self.len + 1;
 }
 
-pub fn dropOffPoint(self: Self) Vec2(i32) {
+pub fn dropOffPoint(self: *const Self) Vec2(i32) {
     return self.pos.as(i32).add(self.direction.toVec().scale(self.len + 1));
 }
 
-pub fn renderBelts(self: Self, is_wireframe: bool) void {
+pub fn renderBelts(self: *const Self, is_wireframe: bool) void {
     var i: u8 = 0;
     while (i <= self.len) : (i += 1) {
         const pos = self.pos.as(i32).add(self.direction.toVec().scale(i));
@@ -125,7 +143,7 @@ pub fn renderBelts(self: Self, is_wireframe: bool) void {
     }
 }
 
-pub fn canConnect(self: Self, direction: Direction) bool {
+pub fn canConnect(self: *const Self, direction: Direction) bool {
     return direction.opposite() != self.direction;
 }
 
@@ -192,18 +210,30 @@ pub fn renderLine(screen_pos: Vec2(i32), is_wireframe: bool) void {
     w4.hline(screen_pos.x, screen_pos.y + 7, 8);
 }
 
-pub fn serialize(self: Self, writer: *Writer) void {
-    writer.writeByte(@bitCast(u8, self.pos.x));
-    writer.writeByte(@bitCast(u8, self.pos.y));
-    writer.writeByte(self.len);
+pub fn rotate(self: *Self) Direction {
+    if (self.len == 0) {
+        self.direction = self.direction.rotateClockwise();
+    } else {
+        self.pos = self.pos.add(self.direction.toVec().scale(self.len).intCast(i8));
+        self.direction = self.direction.opposite();
+    }
+    self.slots = Slots{};
+
+    return self.direction;
+}
+
+pub fn serialize(self: *const Self, writer: *Writer) void {
+    writer.write(self.pos.x);
+    writer.write(self.pos.y);
+    writer.write(self.len);
 }
 
 pub fn deserialize(direction: Direction, reader: *Reader) Self {
     const pos = Vec2(i8){
-        .x = @bitCast(i8, reader.readByte()),
-        .y = @bitCast(i8, reader.readByte()),
+        .x = reader.read(i8),
+        .y = reader.read(i8),
     };
-    const len = reader.readByte();
+    const len = reader.read(u8);
     return .{
         .pos = pos,
         .len = len,

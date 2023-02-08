@@ -1,17 +1,22 @@
-const globals = @import("globals.zig");
+const root = @import("main");
+
+const globals = root.globals;
 
 index: usize = 0,
 
 const Self = @This();
 
-pub fn writeByte(self: *Self, byte: u8) void {
-    globals.buffer[self.index] = byte;
-    self.index += 1;
+pub fn write(self: *Self, value: anytype) void {
+    const T = @TypeOf(value);
+    const size = @sizeOf(T);
+    @ptrCast(*align(1) T, &globals.buffer[self.index]).* = value;
+    self.index += size;
 }
 
 /// Gives current address and advances index
-pub fn writeByteLater(self: *Self) *u8 {
+pub fn reserve(self: *Self, comptime T: type) *align(1) T {
+    const size = @sizeOf(T);
     const prev_index = self.index;
-    self.index += 1;
-    return &globals.buffer[prev_index];
+    self.index += size;
+    return @ptrCast(*align(1) T, &globals.buffer[prev_index]);
 }

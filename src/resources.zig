@@ -1,33 +1,49 @@
-const Vec2 = @import("vec.zig").Vec2;
-const Item = @import("item.zig").Item;
-const w4 = @import("wasm4.zig");
-const utils = @import("utils.zig");
 const std = @import("std");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const utils = root.utils;
+const noise = root.noise;
+const globals = root.globals;
+
+const Item = root.Item;
+const Vec2 = root.Vec2;
+const Tilemap = root.Tilemap;
+const Rect = root.Rect;
 
 pub fn render() void {
-    w4.draw_colors.* = 0x20;
-    for (rings) |pos| {
-        const screen_pos = utils.worldToScreen(pos.as(i32));
-        if (!utils.isOutOfBounds(screen_pos)) {
-            Item.ring.render(screen_pos.x + 2, screen_pos.y + 2);
-        }
-    }
-    for (squares) |pos| {
-        const screen_pos = utils.worldToScreen(pos.as(i32));
-        if (!utils.isOutOfBounds(screen_pos)) {
-            Item.square.render(screen_pos.x + 2, screen_pos.y + 2);
-        }
-    }
-    for (circles) |pos| {
-        const screen_pos = utils.worldToScreen(pos.as(i32));
-        if (!utils.isOutOfBounds(screen_pos)) {
-            Item.circle.render(screen_pos.x + 2, screen_pos.y + 2);
+    const top_left = Vec2(i32){
+        .x = -(globals.camera_pos.x & 7),
+        .y = -(globals.camera_pos.y & 7),
+    };
+    var x: i32 = 0;
+    while (x < Tilemap.width) : (x += 1) {
+        var y: i32 = 0;
+        while (y < Tilemap.height) : (y += 1) {
+            const pos = top_left.add(.{
+                .x = x * 8,
+                .y = y * 8,
+            });
+            if (utils.isOutOfBounds(pos)) continue;
+            const world_pos = utils.screenToWorld(pos);
+            const item = getItemAt(world_pos);
+            if (!item.eql(Item.empty)) {
+                w4.draw_colors.* = 0x20;
+                item.render(pos.x + 2, pos.y + 2);
+            }
         }
     }
 }
 
 pub fn getItemAt(pos: Vec2(i32)) Item {
+    const hardcoded_resource = getResourceAtPosition(pos);
+    if (!hardcoded_resource.eql(Item.empty)) return hardcoded_resource;
+    return getRandomResource(pos, 0);
+}
+
+fn getResourceAtPosition(pos: Vec2(i32)) Item {
     const a = pos.intCast(i8);
+    if (!a.isWithin(hardcoded_resource_bounding_box)) return Item.empty;
     for (rings) |b| {
         if (std.meta.eql(a, b)) return Item.ring;
     }
@@ -39,6 +55,50 @@ pub fn getItemAt(pos: Vec2(i32)) Item {
     }
     return Item.empty;
 }
+
+fn getRandomResource(world_pos: Vec2(i32), seed: u8) Item {
+    _ = seed;
+    const random_value = noise.noise3d(@intToFloat(f32, world_pos.x) / 30, @intToFloat(f32, world_pos.y) / 30, std.math.pi);
+    const random_value_2 = noise.noise3d(@intToFloat(f32, world_pos.x) / 30, @intToFloat(f32, world_pos.y) / 30, std.math.e * 1000.0);
+    if (random_value > threshold(world_pos)) {
+        return Item.circle;
+    } else if (random_value < -threshold(world_pos)) {
+        return Item.ring;
+    } else if (random_value_2 > threshold(world_pos)) {
+        return Item.square;
+    }
+
+    return Item.empty;
+}
+
+fn threshold(pos: Vec2(i32)) f32 {
+    const x = @intToFloat(f32, std.math.max(std.math.absCast(pos.x), std.math.absCast(pos.y)));
+    // const x = @intToFloat(f32, pos.subtract(.{}).magnitudeSquared());
+    return 1.0 - 0.4 / 128.0 * x;
+}
+
+const hardcoded_resource_bounding_box = blk: {
+    var bounding_box: Rect(i8) = .{ .min = .{}, .max = .{} };
+    for (rings) |b| {
+        if (b.x < bounding_box.min.x) bounding_box.min.x = b.x;
+        if (b.y < bounding_box.min.y) bounding_box.min.y = b.y;
+        if (b.x > bounding_box.max.x) bounding_box.max.x = b.x;
+        if (b.y > bounding_box.max.y) bounding_box.max.y = b.y;
+    }
+    for (squares) |b| {
+        if (b.x < bounding_box.min.x) bounding_box.min.x = b.x;
+        if (b.y < bounding_box.min.y) bounding_box.min.y = b.y;
+        if (b.x > bounding_box.max.x) bounding_box.max.x = b.x;
+        if (b.y > bounding_box.max.y) bounding_box.max.y = b.y;
+    }
+    for (circles) |b| {
+        if (b.x < bounding_box.min.x) bounding_box.min.x = b.x;
+        if (b.y < bounding_box.min.y) bounding_box.min.y = b.y;
+        if (b.x > bounding_box.max.x) bounding_box.max.x = b.x;
+        if (b.y > bounding_box.max.y) bounding_box.max.y = b.y;
+    }
+    break :blk bounding_box;
+};
 
 const rings = [_]Vec2(i8){
     // patch 0

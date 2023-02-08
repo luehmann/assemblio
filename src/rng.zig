@@ -1,15 +1,21 @@
-const Item = @import("item.zig").Item;
-const globals = @import("globals.zig");
+const root = @import("main");
+
+const globals = root.globals;
+
+const Item = root.Item;
+const Network = root.Network;
+const Reader = root.Reader;
+const Writer = root.Writer;
 
 pub var x: u8 = 0; // seeded by mouse x at unlock
 pub var y: u8 = 0; // seeded by mouse y at unlock
 pub var z: u8 = 0; // seeded by building count at unlock
 pub var a: u8 = 0; // seeded by t at unlock
 
-pub fn setSeed() void {
-    x = @intCast(u8, globals.connections.len & 0xff);
-    y = @intCast(u8, globals.dead_ends.len & 0xff);
-    z = @intCast(u8, globals.nodes.len);
+pub fn setSeed(network: *const Network) void {
+    x = @intCast(u8, network.connections.len & 0xff);
+    y = @intCast(u8, network.dead_ends.len & 0xff);
+    z = @intCast(u8, network.nodes.len);
     a = @intCast(u8, globals.t & 0xff);
 }
 
@@ -31,11 +37,19 @@ pub fn randomItem() Item {
 }
 
 pub fn getRandomRate() u8 {
-    var res: u8 = 255;
-    const min = 2;
-    const max = 10;
-    while (res > max or res < min) {
-        res = randomByte();
-    }
-    return res;
+    return (randomByte() & 0b111) + 2;
+}
+
+pub fn serialize(writer: *Writer) void {
+    writer.write(x);
+    writer.write(y);
+    writer.write(z);
+    writer.write(a);
+}
+
+pub fn deserialize(reader: *Reader) void {
+    x = reader.read(u8);
+    y = reader.read(u8);
+    z = reader.read(u8);
+    a = reader.read(u8);
 }

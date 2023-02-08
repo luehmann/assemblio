@@ -1,31 +1,31 @@
 const std = @import("std");
-const BoundingBox = @import("bounding_box.zig").BoundingBox;
+const root = @import("main");
+
+const Rect = root.Rect;
 
 pub fn Vec2(comptime T: type) type {
     return struct {
-        x: T,
-        y: T,
+        x: T = 0,
+        y: T = 0,
+
         const Self = @This();
-        const UnsignedT = std.meta.Int(.unsigned, std.meta.bitCount(T));
 
         pub fn divFloor(self: Self, denominator: T) Self {
             return Self{ .x = @divFloor(self.x, denominator), .y = @divFloor(self.y, denominator) };
         }
+
         pub fn add(self: Self, b: Self) Self {
             return Self{ .x = self.x + b.x, .y = self.y + b.y };
         }
-        pub fn addX(self: Self, n: T) Self {
-            return Self{ .x = self.x + n, .y = self.y };
-        }
-        pub fn addY(self: Self, n: T) Self {
-            return Self{ .x = self.x, .y = self.y + n };
-        }
+
         pub fn subtract(self: Self, b: Self) Self {
             return Self{ .x = self.x - b.x, .y = self.y - b.y };
         }
+
         pub fn scale(self: Self, factor: T) Self {
             return Self{ .x = self.x * factor, .y = self.y * factor };
         }
+
         pub fn intCast(self: Self, comptime DestType: type) Vec2(DestType) {
             return .{
                 .x = @intCast(DestType, self.x),
@@ -46,14 +46,17 @@ pub fn Vec2(comptime T: type) type {
             };
         }
 
-        pub fn isWithin(self: Self, bounding_box: BoundingBox(T)) bool {
+        pub fn isWithin(self: Self, bounding_box: Rect(T)) bool {
             return !(bounding_box.min.x > self.x or bounding_box.max.x < self.x or bounding_box.min.y > self.y or bounding_box.max.y < self.y);
         }
 
-        pub fn magnitude(self: Self) T {
-            return @intCast(T, std.math.sqrt(@intCast(UnsignedT, self.x * self.x) + @intCast(UnsignedT, self.y * self.y)));
+        pub fn magnitudeSquared(self: Self) T {
+            return self.x * self.x + self.y * self.y;
         }
-
-        pub const zero = Self{ .x = 0, .y = 0 };
     };
+}
+
+test "magnitudeSquared" {
+    try std.testing.expectEqual(@as(f64, 34), Vec2(f64).magnitudeSquared(.{ .x = 3.0, .y = -5.0 }));
+    try std.testing.expectEqual(@as(i8, 34), Vec2(i8).magnitudeSquared(.{ .x = -3, .y = 5 }));
 }

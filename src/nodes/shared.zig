@@ -1,10 +1,13 @@
-const Vec2 = @import("../vec.zig").Vec2;
-const Direction = @import("../direction.zig").Direction;
-const w4 = @import("../wasm4.zig");
-const Item = @import("../item.zig").Item;
-const utils = @import("../utils.zig");
-const globals = @import("../globals.zig");
-const Belt = @import("Belt.zig");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const globals = root.globals;
+const utils = root.utils;
+
+const Belt = root.nodes.Belt;
+const Direction = root.Direction;
+const Item = root.Item;
+const Vec2 = root.Vec2;
 
 pub fn renderBelt(pos: Vec2(i32), direction: Direction, has_line: bool, is_wireframe: bool) void {
     if (pos.isWithin(globals.screen_box)) {

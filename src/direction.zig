@@ -1,6 +1,8 @@
 const std = @import("std");
-const w4 = @import("wasm4.zig");
-const Vec2 = @import("vec.zig").Vec2;
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const Vec2 = root.Vec2;
 
 pub const Direction = enum(u2) {
     north = 0b00,
@@ -52,26 +54,26 @@ pub const Direction = enum(u2) {
     pub fn isFacingNegative(self: Direction) bool {
         return switch (self) {
             .north, .west => true,
-            else => false,
+            .south, .east => false,
         };
     }
 };
 
-test "Direction.rotateClockwise" {
+test "rotateClockwise" {
     try std.testing.expectEqual(Direction.north, Direction.west.rotateClockwise());
     try std.testing.expectEqual(Direction.east, Direction.north.rotateClockwise());
     try std.testing.expectEqual(Direction.south, Direction.east.rotateClockwise());
     try std.testing.expectEqual(Direction.west, Direction.south.rotateClockwise());
 }
 
-test "Direction.rotateCounterClockwise" {
+test "rotateCounterClockwise" {
     try std.testing.expectEqual(Direction.north, Direction.east.rotateCounterClockwise());
     try std.testing.expectEqual(Direction.east, Direction.south.rotateCounterClockwise());
     try std.testing.expectEqual(Direction.south, Direction.west.rotateCounterClockwise());
     try std.testing.expectEqual(Direction.west, Direction.north.rotateCounterClockwise());
 }
 
-test "Direction.opposite" {
+test "opposite" {
     try std.testing.expectEqual(Direction.north, Direction.south.opposite());
     try std.testing.expectEqual(Direction.east, Direction.west.opposite());
     try std.testing.expectEqual(Direction.south, Direction.north.opposite());

@@ -7,7 +7,7 @@
 // │                                                                           │
 // └───────────────────────────────────────────────────────────────────────────┘
 
-pub const canvas_size: u32 = 160;
+pub const canvas_size = 160;
 
 // ┌───────────────────────────────────────────────────────────────────────────┐
 // │                                                                           │
@@ -27,18 +27,17 @@ pub const mouse_buttons: *const MouseButtons = @intToPtr(*const MouseButtons, 0x
 pub const SYSTEM_FLAGS: *u8 = @intToPtr(*u8, 0x1f);
 pub const FRAMEBUFFER: *[6400]u8 = @intToPtr(*[6400]u8, 0xA0);
 
-pub const Gamepad = packed struct {
+pub const Gamepad = packed struct(u8) {
     button_1: bool,
     button_2: bool,
-    _reserved_bit_2: bool,
-    _reserved_bit_3: bool,
+    _: u2,
     button_left: bool,
     button_right: bool,
     button_up: bool,
     button_down: bool,
 };
 
-pub const MouseButtons = packed struct {
+pub const MouseButtons = packed struct(u8) {
     mouse_left: bool,
     mouse_right: bool,
     mouse_middle: bool,

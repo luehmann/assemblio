@@ -1,8 +1,9 @@
 const std = @import("std");
-const Vec2 = @import("vec.zig").Vec2;
+const root = @import("main");
 
-/// A rectangle
-pub fn BoundingBox(comptime T: type) type {
+const Vec2 = root.Vec2;
+
+pub fn Rect(comptime T: type) type {
     return struct {
         min: Vec2(T),
         max: Vec2(T),
@@ -25,7 +26,7 @@ pub fn BoundingBox(comptime T: type) type {
         }
 
         pub fn distance(a: Self, b: Self) Vec2(T) {
-            if (a.intersects(b)) return Vec2(T).zero;
+            if (a.intersects(b)) return Vec2(T){};
             const most_left = if (a.min.x < b.min.x) a else b;
             const most_right = if (b.min.x < a.min.x) a else b;
 
@@ -41,12 +42,12 @@ pub fn BoundingBox(comptime T: type) type {
     };
 }
 
-test "BoundingBox.distance" {
-    const a = BoundingBox(i32){
+test "distance" {
+    const a = Rect(i32){
         .min = .{ .x = 0, .y = 0 },
         .max = .{ .x = 5, .y = 5 },
     };
-    const b = BoundingBox(i32){
+    const b = Rect(i32){
         .min = .{ .x = 20, .y = 20 },
         .max = .{ .x = 25, .y = 25 },
     };

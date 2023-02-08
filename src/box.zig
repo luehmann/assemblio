@@ -1,8 +1,10 @@
-//! small utils to draw all the box parts individually 
+//! small utils to draw all the box parts individually
 //! colors have to be set at the call site
 
-const Vec2 = @import("vec.zig").Vec2;
-const w4 = @import("wasm4.zig");
+const root = @import("main");
+const w4 = @import("wasm4");
+
+const Vec2 = root.Vec2;
 
 const box_wide_top_texture = [_]u8{
     0xff, 0xff,
